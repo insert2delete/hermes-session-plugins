@@ -1,0 +1,11 @@
+name: session-mint
+version: 1.0.0
+description: >-
+  Let the agent create a real, visible Desktop session: it writes one JSON line to
+  ~/.hermes/session-requests.jsonl and this plugin opens the session, prefills its
+  composer and optionally sends the first message. Also opens an existing session in a
+  new tab and moves a session between projects. Desktop-only plugin (no tools, no hooks).
+author: "insert2delete"
+license: MIT
+homepage: https://github.com/insert2delete/hermes-session-plugins
+platforms: [linux, macos, windows]

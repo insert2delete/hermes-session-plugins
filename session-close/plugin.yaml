@@ -1,0 +1,11 @@
+name: session-close
+version: 1.0.0
+description: >-
+  Let the agent close the tab of its own session: the hermes-close-session script appends
+  one JSON line to ~/.hermes/session-close.jsonl and this plugin waits for the turn to
+  finish, then clicks the panel's close button — the same path as a manual close. --hold
+  keeps the tab open and flags it. Desktop-only plugin (no tools, no hooks).
+author: "insert2delete"
+license: MIT
+homepage: https://github.com/insert2delete/hermes-session-plugins
+platforms: [linux, macos, windows]

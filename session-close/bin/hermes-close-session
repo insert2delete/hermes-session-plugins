@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# hermes-close-session — ask the Desktop app to close the tab of THIS session.
+#
+# The agent has no tool that closes a Desktop tab. This script only appends one
+# line to the queue ~/.hermes/session-close.jsonl and the `session-close`
+# Desktop plugin performs it: it waits for the turn to finish and clicks the
+# panel's ✕ — even when the tab is right in front of you.
+#
+#   hermes-close-session                    # close once the answer finishes (~2.5 s)
+#   hermes-close-session --now              # close without that delay
+#   hermes-close-session --hold "to read"   # DO NOT CLOSE: keep it open, mark it ❗
+#   hermes-close-session --session local-…  # another session (default $HERMES_SESSION_ID)
+#
+# --hold without text means "there is something to read"; the text shows in the
+# notice and explains why the tab stayed. Use it whenever the answer carries a
+# recommendation or a warning.
+set -euo pipefail
+
+QUEUE="${HERMES_HOME:-$HOME/.hermes}/session-close.jsonl"
+sid="${HERMES_SESSION_ID:-}"
+hold=""
+why=""
+now=0
+
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --session) sid="${2:-}"; shift 2 ;;
+    --session=*) sid="${1#*=}"; shift ;;
+    --hold)
+      hold="true"
+      if [ $# -gt 1 ] && [ "${2#--}" = "$2" ]; then hold="$2"; shift; fi
+      shift ;;
+    --hold=*) hold="${1#*=}"; shift ;;
+    --why) why="${2:-}"; shift 2 ;;
+    --why=*) why="${1#*=}"; shift ;;
+    --now) now=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+case "$sid" in
+  local-*) ;;
+  "") echo "missing \$HERMES_SESSION_ID — run inside a Hermes session, or pass --session local-…" >&2; exit 1 ;;
+  *) echo "session id must start with 'local-': $sid" >&2; exit 1 ;;
+esac
+
+# Session title: compression rotates ids (the runtime id in $HERMES_SESSION_ID is
+# not the tab's id), and the plugin finds the tab by title when the id no longer
+# matches.
+DB="${HERMES_HOME:-$HOME/.hermes}/state.db"
+title=""
+if command -v sqlite3 >/dev/null 2>&1; then
+  title=$(sqlite3 "file:$DB?mode=ro" "select coalesce(title,'') from sessions where id='$sid'" 2>/dev/null | head -1 || true)
+  if [ -z "$title" ]; then
+    title=$(sqlite3 "file:$DB?mode=ro" "select coalesce(title,'') from sessions where id like '${sid:0:24}%' order by last_activity_at desc limit 1" 2>/dev/null | head -1 || true)
+  fi
+  if [ -z "$title" ] && [ -n "${HERMES_SESSION_CWD:-}" ]; then
+    title=$(sqlite3 "file:$DB?mode=ro" "select coalesce(title,'') from sessions where cwd='$HERMES_SESSION_CWD' order by last_activity_at desc limit 1" 2>/dev/null | head -1 || true)
+  fi
+fi
+
+python3 - "$QUEUE" "$sid" "$hold" "$why" "$now" "$title" <<'PY'
+import json, os, secrets, sys, time
+
+queue, sid, hold, why, now, title = sys.argv[1:7]
+row = {"id": f"close-{int(time.time())}-{secrets.token_hex(3)}", "close": sid, "now": now == "1"}
+if title.strip():
+    row["title"] = title.strip()
+if hold:
+    row["hold"] = hold
+if why:
+    row["why"] = why
+os.makedirs(os.path.dirname(queue), exist_ok=True)
+with open(queue, "a", encoding="utf-8") as fh:
+    fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+print(json.dumps(row, ensure_ascii=False))
+PY
